@@ -22,7 +22,7 @@ setup(
     packages=find_packages(where='src'),
     package_dir={'': 'src'},
     test_suite='tests',
-    install_requires=['colorama==0.4.1'],
+    install_requires=['colorama'],
     keywords='',
     classifiers=[
         'Programming Language :: Python',
