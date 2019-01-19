@@ -25,7 +25,6 @@ setup(
     install_requires=['colorama==0.4.1'],
     keywords='',
     classifiers=[
-        'LICENSE :: OSI APPROVED :: BSD LICENSE',
         'Programming Language :: Python',
         'Programming Language :: Python :: 2',
         'Programming Language :: Python :: 3',
