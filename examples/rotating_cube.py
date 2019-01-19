@@ -6,8 +6,8 @@ import bext, math, time, random
 BLOCK = chr(9608)
 
 width, height = bext.size()
-DEFAULT_SCALEX = (width - 4) // 4
-DEFAULT_SCALEY = (height - 4) // 4
+DEFAULT_SCALEX = (width - 4) // 8
+DEFAULT_SCALEY = (height - 4) // 4 # Text cells are twice as tall as they are wide, so set scaley accordingly.
 DEFAULT_TRANSLATEX = (width - 4) // 2
 DEFAULT_TRANSLATEY = (height - 4) // 2
 
@@ -175,6 +175,7 @@ try:
 
         # Draw cube
         for x, y in screenPoints:
+            # Writing to the terminal will by far be the slowest part of this program.
             bext.goto(x, y)
             print(BLOCK, end='')
 
