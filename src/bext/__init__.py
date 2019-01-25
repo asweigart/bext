@@ -82,4 +82,15 @@ def title(text):
     sys.stdout.write(colorama.ansi.OSC + '2;' + text + colorama.ansi.BEL)
 
 
+# Constants for hard-to-type (from an American, QWERTY-keyboard perspective) characters that exist in the Consolas (Windows), Menlo (macOS), and Monospace Regular (Ubuntu) fonts.
+CENT = chr(162) # ¢
+POUND = chr(163) # £
+YEN = chr(165) # ¥
+BROKEN_BAR = chr(166) # ¦
+SECTION = chr(167) # §
+COPYRIGHT = chr(169) # ©
+
+
+
+
 init() # Automatically called on import.
