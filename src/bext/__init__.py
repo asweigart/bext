@@ -1,14 +1,22 @@
+# -*- coding: utf-8 -*-
 # Bext
 # By Al Sweigart al@inventwithpython.com
 # Copyright 2019, BSD 3-Clause license, see LICENSE file.
 # Built on top of Colorama by Jonathan Hartley
 
 
-__version__ = '0.0.2'
+__version__ = '0.0.3'
 
 import colorama, sys, os, random
 
 ALL_COLORS = ('black', 'red', 'green', 'yellow', 'blue', 'purple', 'cyan', 'white')
+
+
+if sys.platform == 'win32':
+    import ctypes
+    class _CursorInfo(ctypes.Structure):
+        _fields_ = [("size", ctypes.c_int), ("visible", ctypes.c_byte)]
+
 
 def init():
     """This sets up stdout to work in color. This function is automatically
@@ -67,9 +75,21 @@ def goto(x, y):
     sys.stdout.write('\x1b[%d;%dH' % (y + 1, x + 1))
 
 
+def resize(columns, rows):
+    if sys.platform == 'win32':
+        # This is only on Windows 7 and later.
+        os.system('mode %s,%s' % (columns, rows))
+        return size() == (columns, rows)
+        # TODO - figure out a way to detect windows 7. (There seems to be some problems with platform.platform())
+    else:
+        raise NotImplementedError
+        #os.system('resize -s %s %s' % (rows, columns))
+        #return size() == (columns, rows)
+
+
 def size():
-    """Returns the size of the terminal as a named tuple of two ints: (columns, lines)"""
-    return os.get_terminal_size()
+    """Returns the size of the terminal as a named tuple of two ints: (columns, rows)"""
+    return tuple(os.get_terminal_size())
 
 
 def clear(mode=2):
@@ -82,15 +102,42 @@ def title(text):
     sys.stdout.write(colorama.ansi.OSC + '2;' + text + colorama.ansi.BEL)
 
 
+def hide():
+    if sys.platform == 'win32':
+        # This only works in the Command Prompt and PowerShell, not in other terminal-like environments.
+        ci = _CursorInfo()
+        handle = ctypes.windll.kernel32.GetStdHandle(-11)
+        ctypes.windll.kernel32.GetConsoleCursorInfo(handle, ctypes.byref(ci))
+        ci.visible = False
+        ctypes.windll.kernel32.SetConsoleCursorInfo(handle, ctypes.byref(ci))
+    else:
+        # I can't get this to work for some reason.
+        #sys.out.write('\033[?25l')
+        #sys.out.flush()
+        raise NotImplementedError
+
+def show():
+    if sys.platform == 'win32':
+        # This only works in the Command Prompt and PowerShell, not in other terminal-like environments.
+        ci = _CursorInfo()
+        handle = ctypes.windll.kernel32.GetStdHandle(-11)
+        ctypes.windll.kernel32.GetConsoleCursorInfo(handle, ctypes.byref(ci))
+        ci.visible = True
+        ctypes.windll.kernel32.SetConsoleCursorInfo(handle, ctypes.byref(ci))
+    elif os.name == 'posix':
+        #sys.out.write('\033[?25h')
+        #sys.out.flush()
+        raise NotImplementedError
+
 # Constants for hard-to-type (from an American, QWERTY-keyboard perspective) characters that exist in the Consolas (Windows), Menlo (macOS), and Monospace Regular (Ubuntu) fonts.
+# TODO - fill in the rest based on the Consolas, Menlo, and Monospace Regular fonts.
+"""
 CENT = chr(162) # ¢
 POUND = chr(163) # £
 YEN = chr(165) # ¥
 BROKEN_BAR = chr(166) # ¦
 SECTION = chr(167) # §
 COPYRIGHT = chr(169) # ©
-
-
-
+"""
 
 init() # Automatically called on import.
