@@ -1,69 +1,85 @@
-# -*- coding: utf-8 -*-
 # Bext
 # By Al Sweigart al@inventwithpython.com
-# Copyright 2019, BSD 3-Clause license, see LICENSE file.
-# Built on top of Colorama by Jonathan Hartley
 
+__version__ = '0.0.4'
 
-__version__ = '0.0.3'
+import random, sys
+import curses # TODO - add some message if on windows and windows-curses isn't installed.
 
-import colorama, sys, os, random
+# NOTE: The screen goes away if an exception is raised, getting rid of potentially
+# useful information. Maybe we should "save" the screen and display it before
+# re-raising the exception.
 
-ALL_COLORS = ('black', 'red', 'green', 'yellow', 'blue', 'purple', 'cyan', 'white')
+ALL_FG_COLORS = ('black', 'blue', 'green', 'cyan', 'red', 'magenta', 'yellow', 'white',
+                 'light black', 'light blue', 'light green', 'light cyan', 'light red',
+                 'light magenta', 'light yellow', 'light white')
+ALL_BG_COLORS = ('black', 'blue', 'green', 'cyan', 'red', 'magenta', 'yellow', 'white')
 
+_ALL_CURSES_COLORS = [curses.COLOR_BLACK, curses.COLOR_BLUE, curses.COLOR_GREEN,
+                      curses.COLOR_CYAN, curses.COLOR_RED, curses.COLOR_MAGENTA,
+                      curses.COLOR_YELLOW, curses.COLOR_WHITE]
 
-if sys.platform == 'win32':
-    import ctypes
-    class _CursorInfo(ctypes.Structure):
-        _fields_ = [("size", ctypes.c_int), ("visible", ctypes.c_byte)]
+# Initialize the curses library
+_G_SCR = curses.initscr() # Initialize the screen.
+curses.start_color() # Initialize colors.
 
+# Initialize all the color pairs:
+ALL_COLOR_PAIRS = {}
+for fgi, fgc in enumerate(_ALL_CURSES_COLORS):
+    for bgi, bgc in enumerate(_ALL_CURSES_COLORS):
+        colorPairNum = 1 + (fgi + (bgi * 8))
+        ALL_COLOR_PAIRS[(ALL_FG_COLORS[fgi], ALL_BG_COLORS[bgi])] = colorPairNum
+        curses.init_pair(colorPairNum, _ALL_CURSES_COLORS[fgc], _ALL_CURSES_COLORS[bgc])
 
-def init():
-    """This sets up stdout to work in color. This function is automatically
-    called when Bext is imported."""
-    colorama.init()
+_G_CURRENT_FG_COLOR = 'white'
+_G_CURRENT_BG_COLOR = 'black'
 
+_G_SCR.scrollok(True) # When stuff is printed on the last line, scroll the window.
+curses.noecho() # Don't echo key presses unless input() has been called. TODO - maybe not even then.
+_G_SCR.keypad(True) #
 
 def fg(color):
     """Sets the foreground color. The `color` parameter can be one of the
-    following strings: 'black', 'red', 'green', 'yellow', 'blue', 'purple',
-    'cyan', 'white', 'reset'."""
+    following strings: 'random', 'black', 'blue', 'green', 'cyan', 'red',
+    'magenta', 'yellow', 'white', 'light black', 'light blue', 'light green',
+    'light cyan', 'light red', 'light magenta', 'light yellow', 'light white'."""
+    global _G_CURRENT_FG_COLOR
+
     color = color.lower()
     if color == 'random':
-        color = random.choice(ALL_COLORS)
+        color = random.choice(ALL_FG_COLORS)
 
-    color = {'black':   colorama.Fore.BLACK,
-             'red':     colorama.Fore.RED,
-             'green':   colorama.Fore.GREEN,
-             'yellow':  colorama.Fore.YELLOW,
-             'blue':    colorama.Fore.BLUE,
-             'magenta': colorama.Fore.MAGENTA,
-             'purple':  colorama.Fore.MAGENTA,
-             'cyan':    colorama.Fore.CYAN,
-             'white':   colorama.Fore.WHITE,
-             'reset':   colorama.Fore.RESET}[color]
-    sys.stdout.write(color)
+    if color not in ALL_FG_COLORS:
+        raise ValueError('"%s" is not a valid color. Select one of %s' % (color, ', '.join(ALL_FG_COLORS)))
+
+    _G_CURRENT_FG_COLOR = color
 
 
 def bg(color):
     """Sets the background color. The `color` parameter can be one of the
-    following strings: 'black', 'red', 'green', 'yellow', 'blue', 'purple',
-    'cyan', 'white', 'reset'."""
+    following strings: 'random', 'black', 'blue', 'green', 'cyan', 'red',
+    'magenta', 'yellow', 'white'."""
+    global _G_CURRENT_BG_COLOR
     color = color.lower()
     if color == 'random':
-        color = random.choice(ALL_COLORS)
+        color = random.choice(ALL_BG_COLORS)
 
-    color = {'black':   colorama.Back.BLACK,
-             'red':     colorama.Back.RED,
-             'green':   colorama.Back.GREEN,
-             'yellow':  colorama.Back.YELLOW,
-             'blue':    colorama.Back.BLUE,
-             'magenta': colorama.Back.MAGENTA,
-             'purple':  colorama.Back.MAGENTA,
-             'cyan':    colorama.Back.CYAN,
-             'white':   colorama.Back.WHITE,
-             'reset':   colorama.Back.RESET}[color]
-    sys.stdout.write(color)
+    if color not in ALL_BG_COLORS:
+        raise ValueError('"%s" is not a valid color. Select one of %s' % (color, ', '.join(ALL_BG_COLORS)))
+
+    _G_CURRENT_BG_COLOR = color
+
+
+def fgbg(fgcolor, bgcolor):
+    """Sets the foreground and background color. This is a wrapper for calls
+    to fg() and bg()."""
+    try:
+        fg(fgcolor)
+    except:
+        pass
+    else:
+        # Only call bg() if fg() was successful.
+        bg(bgcolor)
 
 
 def goto(x, y):
@@ -72,62 +88,112 @@ def goto(x, y):
     (0, 0) is the top-left corner coordinate."""
     x = 0 if x < 0 else x
     y = 0 if y < 0 else y
-    sys.stdout.write('\x1b[%d;%dH' % (y + 1, x + 1))
+    _G_SCR.move(y, x)
+
+
+def pos():
+    """Get the current x, y position of the cursor."""
+    y, x = curses.getsyx()
+    return x, y
+
+
+def charAt(x, y):
+    """Return the character located at x, y on the screen."""
+    bits = _G_SCR.inch(y, x)
+    return
+
+
+def fgAt(x, y):
+    """Returns the foreground color at x, y on the screen."""
+    bits = _G_SCR.inch(y, x)
+    return
+
+
+def bgAt(x, y):
+    """Returns the background color at x, y on the screen."""
+    bits = _G_SCR.inch(y, x)
+    return
 
 
 def resize(columns, rows):
-    if sys.platform == 'win32':
-        # This is only on Windows 7 and later.
-        os.system('mode %s,%s' % (columns, rows))
-        return size() == (columns, rows)
-        # TODO - figure out a way to detect windows 7. (There seems to be some problems with platform.platform())
-    else:
-        raise NotImplementedError
-        #os.system('resize -s %s %s' % (rows, columns))
-        #return size() == (columns, rows)
+    curses.resize_term(rows, columns)
 
 
 def size():
-    """Returns the size of the terminal as a named tuple of two ints: (columns, rows)"""
-    return tuple(os.get_terminal_size())
+    """Returns the size of the terminal as a named tuple of two ints: (width, height)"""
+    height, width = _G_SCR.getmaxyx()
+    return width, height
 
 
-def clear(mode=2):
+def clear(flush=True):
     """Clears the terminal and positions the cursor at the top-left corner."""
-    sys.stdout.write(colorama.ansi.CSI + str(mode) + 'J')
+    _G_SCR.clear()
+
+    if flush:
+        _G_SCR.refresh()
 
 
 def title(text):
     """Sets the title of the terminal window to text."""
-    sys.stdout.write(colorama.ansi.OSC + '2;' + text + colorama.ansi.BEL)
+    #sys.stdout.write(colorama.ansi.OSC + '2;' + text + colorama.ansi.BEL)
+    #More info on how to do this on windows:
+    #https://support.microsoft.com/en-us/help/124103/how-to-obtain-a-console-window-handle-hwnd
+    pass
 
 
-def hide():
-    if sys.platform == 'win32':
-        # This only works in the Command Prompt and PowerShell, not in other terminal-like environments.
-        ci = _CursorInfo()
-        handle = ctypes.windll.kernel32.GetStdHandle(-11)
-        ctypes.windll.kernel32.GetConsoleCursorInfo(handle, ctypes.byref(ci))
-        ci.visible = False
-        ctypes.windll.kernel32.SetConsoleCursorInfo(handle, ctypes.byref(ci))
+def hideCursor():
+    """Hide the cursor."""
+    curses.curs_set(False)
+
+
+def showCursor():
+    """Show the cursor."""
+    curses.curs_set(True)
+
+
+def blockCursor():
+    """Show the full block style cursor."""
+    curses.curs_set(2) # full block cursor
+
+
+def print(*args, sep=' ', end='\n', flush=True):
+    """TODO"""
+    if sep is None:
+        sep = ' '
+    if not isinstance(sep, str):
+        raise TypeError('sep must be None or a string, not %s' % sep.__class__.__name__)
+
+    if end is None:
+        end = '\n'
+    if not isinstance(end, str):
+        raise TypeError('end must be None or a string, not %s' % end.__class__.__name__)
+
+    valueToPrint = sep.join([str(arg) for arg in args]) + end
+
+    if _G_CURRENT_FG_COLOR.startswith('light'):
+        nonLightColor = _G_CURRENT_FG_COLOR[6:]
+        colorPairNum = ALL_COLOR_PAIRS[(nonLightColor, _G_CURRENT_BG_COLOR)]
+        colorAndAttr = curses.color_pair(colorPairNum) | curses.A_BOLD
     else:
-        # I can't get this to work for some reason.
-        #sys.out.write('\033[?25l')
-        #sys.out.flush()
-        raise NotImplementedError
+        colorPairNum = ALL_COLOR_PAIRS[(_G_CURRENT_FG_COLOR, _G_CURRENT_BG_COLOR)]
+        colorAndAttr = curses.color_pair(colorPairNum)
 
-def show():
-    if sys.platform == 'win32':
-        # This only works in the Command Prompt and PowerShell, not in other terminal-like environments.
-        ci = _CursorInfo()
-        handle = ctypes.windll.kernel32.GetStdHandle(-11)
-        ctypes.windll.kernel32.GetConsoleCursorInfo(handle, ctypes.byref(ci))
-        ci.visible = True
-        ctypes.windll.kernel32.SetConsoleCursorInfo(handle, ctypes.byref(ci))
-    elif os.name == 'posix':
-        #sys.out.write('\033[?25h')
-        #sys.out.flush()
-        raise NotImplementedError
+    _G_SCR.addstr(valueToPrint, colorAndAttr)
+
+    if flush:
+        _G_SCR.refresh()
+
+
+def input():
+    """TODO"""
+    pass
+    curses.flushinp() # Get rid of any "type ahead" characters in the input buffer.
+
+
+def exit(status=None):
+    """TODO"""
+    curses.endwin()
+    sys.exit(status)
 
 # Constants for hard-to-type (from an American, QWERTY-keyboard perspective) characters that exist in the Consolas (Windows), Menlo (macOS), and Monospace Regular (Ubuntu) fonts.
 # TODO - fill in the rest based on the Consolas, Menlo, and Monospace Regular fonts.
@@ -140,4 +206,3 @@ SECTION = chr(167) # §
 COPYRIGHT = chr(169) # ©
 """
 
-init() # Automatically called on import.

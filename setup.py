@@ -22,7 +22,7 @@ setup(
     packages=find_packages(where='src'),
     package_dir={'': 'src'},
     test_suite='tests',
-    install_requires=['colorama'],
+    install_requires=['windows-curses;platform_system=="Windows"'],
     keywords='',
     classifiers=[
         'Programming Language :: Python',
