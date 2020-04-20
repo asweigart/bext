@@ -5,9 +5,9 @@
 # Built on top of Colorama by Jonathan Hartley
 
 
-__version__ = '0.0.4'
+__version__ = '0.0.5'
 
-import colorama, sys, os, random
+import colorama, sys, os, random, shutil
 
 ALL_COLORS = ('black', 'red', 'green', 'yellow', 'blue', 'purple', 'cyan', 'white')
 
@@ -16,6 +16,15 @@ if sys.platform == 'win32':
     import ctypes
     class _CursorInfo(ctypes.Structure):
         _fields_ = [("size", ctypes.c_int), ("visible", ctypes.c_byte)]
+
+    STD_OUTPUT_HANDLE = -11
+
+    class COORD(ctypes.Structure):
+        pass
+
+    COORD._fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
+
+
 
 
 def init():
@@ -66,13 +75,43 @@ def bg(color):
     sys.stdout.write(color)
 
 
-def goto(x, y):
+def _goto_control_code(x, y):
     """Repositions the cursor to the x, y coordinates in the terminal window.
 
     (0, 0) is the top-left corner coordinate."""
-    x = 0 if x < 0 else x
-    y = 0 if y < 0 else y
+    if x < 0:
+        raise IndexError('x coordinate is negative')
+    if y < 0:
+        raise IndexError('y coordinate is negative')
+
+    width, height = shutil.get_terminal_size()
+
+    if x >= width:
+        raise IndexError('x coordinate is greater than terminal width ' + str(width))
+    if y >= height:
+        raise IndexError('y coordinate is greater than terminal height ' + str(height))
+
     sys.stdout.write('\x1b[%d;%dH' % (y + 1, x + 1))
+
+
+def _goto_win32_api(x, y):
+    """Repositions the cursor to the x, y coordinates in the terminal window.
+
+    (0, 0) is the top-left corner coordinate."""
+    if x < 0:
+        raise IndexError('x coordinate is negative')
+    if y < 0:
+        raise IndexError('y coordinate is negative')
+
+    width, height = shutil.get_terminal_size()
+
+    if x >= width:
+        raise IndexError('x coordinate is greater than terminal width ' + str(width))
+    if y >= height:
+        raise IndexError('y coordinate is greater than terminal height ' + str(height))
+
+    h = ctypes.windll.kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+    ctypes.windll.kernel32.SetConsoleCursorPosition(h, COORD(x, y))
 
 
 def resize(columns, rows):
@@ -89,7 +128,7 @@ def resize(columns, rows):
 
 def size():
     """Returns the size of the terminal as a named tuple of two ints: (columns, rows)"""
-    return tuple(os.get_terminal_size())
+    return shutil.get_terminal_size()
 
 
 def clear(mode=2):
@@ -139,5 +178,11 @@ BROKEN_BAR = chr(166) # ¦
 SECTION = chr(167) # §
 COPYRIGHT = chr(169) # ©
 """
+
+if sys.platform == 'win32':
+    # On Windows, use the win32 api to set the cursor position since it's faster.
+    goto = _goto_win32_api
+else:
+    goto = _goto_control_code
 
 init() # Automatically called on import.
