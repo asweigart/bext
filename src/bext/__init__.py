@@ -131,6 +131,16 @@ def size():
     return shutil.get_terminal_size()
 
 
+def width():
+    """Returns the width of the terminal as an int."""
+    return shutil.get_terminal_size()[0]
+
+
+def height():
+    """Returns the height of the terminal as an int."""
+    return shutil.get_terminal_size()[1]
+
+
 def clear(mode=2):
     """Clears the terminal and positions the cursor at the top-left corner."""
     sys.stdout.write(colorama.ansi.CSI + str(mode) + 'J')
