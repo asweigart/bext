@@ -39,6 +39,8 @@ Move the cursor to x, y coordinates on the screen. (0, 0) is the top-left corner
 Example
 -------
 
+```python
+
     import bext, random
 
     width, height = bext.size()
@@ -56,6 +58,8 @@ Example
             print('*', end='')
     except KeyboardInterrupt:
         pass
+
+```
 
 Contribute
 ----------
