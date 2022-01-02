@@ -4,8 +4,9 @@
 # Copyright 2019, BSD 3-Clause license, see LICENSE file.
 # Built on top of Colorama by Jonathan Hartley
 
+# TODO - look at https://pypi.org/project/getkey/
 
-__version__ = '0.0.6'
+__version__ = '0.0.7'
 
 import colorama, sys, os, random, shutil
 
@@ -24,9 +25,9 @@ if sys.platform == 'win32':
         pass
 
     COORD._fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
-else:
+elif sys.platform.startswith('linux') or sys.platform.startswith('darwin'):
     # macOS and Linux
-    import tty, termios  # Used by getKey()
+    import tty, termios, select  # Used by getKey()
 
 
 
@@ -118,6 +119,8 @@ def _goto_win32_api(x, y):
 
 
 def resize(columns, rows):
+    """Resize the terminal window. Returns True if the resize was successful,
+    otherwise returns False."""
     if sys.platform == 'win32':
         # This is only on Windows 7 and later.
         os.system('mode %s,%s' % (columns, rows))
@@ -134,29 +137,21 @@ def size():
     return shutil.get_terminal_size()
 
 
-def width():
-    """Returns the width of the terminal as an int."""
-    return shutil.get_terminal_size()[0]
-
-
-def height():
-    """Returns the height of the terminal as an int."""
-    return shutil.get_terminal_size()[1]
-
-
-def clear(mode=2):
+def clear(mode=2):  # TODO - what does mode mean?
     """Clears the terminal and positions the cursor at the top-left corner."""
     sys.stdout.write(colorama.ansi.CSI + str(mode) + 'J')
     # On macOS and Linux, clearing doesn't reset the cursor back to the top-left
     # corner of the termnal window, so do that here:
     goto(0, 0)
 
+
 def title(text):
-    """Sets the title of the terminal window to text."""
+    """Sets the title of the terminal window to `text`."""
     sys.stdout.write(colorama.ansi.OSC + '2;' + text + colorama.ansi.BEL)
 
 
 def hide():
+    """"Hides the cursor."""
     if sys.platform == 'win32':
         # This only works in the Command Prompt and PowerShell, not in other terminal-like environments.
         ci = _CursorInfo()
@@ -165,12 +160,12 @@ def hide():
         ci.visible = False
         ctypes.windll.kernel32.SetConsoleCursorInfo(handle, ctypes.byref(ci))
     else:
-        # I can't get this to work for some reason.
-        #sys.out.write('\033[?25l')
-        #sys.out.flush()
-        raise NotImplementedError
+        sys.out.write('\033[?25l')
+        sys.out.flush()
+
 
 def show():
+    """Shows the cursor after hiding it."""
     if sys.platform == 'win32':
         # This only works in the Command Prompt and PowerShell, not in other terminal-like environments.
         ci = _CursorInfo()
@@ -178,22 +173,27 @@ def show():
         ctypes.windll.kernel32.GetConsoleCursorInfo(handle, ctypes.byref(ci))
         ci.visible = True
         ctypes.windll.kernel32.SetConsoleCursorInfo(handle, ctypes.byref(ci))
-    elif os.name == 'posix':
-        #sys.out.write('\033[?25h')
-        #sys.out.flush()
-        raise NotImplementedError
+    else:
+        sys.out.write('\033[?25h')
+        sys.out.flush()
 
 
-def _getKey_win32_api():
-    """Block until a single key is pressed, then return the key as a string.
+def _getKey_win32_api(blocking=True):
+    """Wait until a single key is pressed, then return the key as a string.
+
+    If blocking is False, immediately returns None if no key was hit without
+    waiting for a key press.
 
     This function can't detect ctrl, shift, alt, win, or other special keys.
     However, holding down shift or having capslock engaged will return a
     shifted character."""
     if sys.version_info[0] == 2:
-        getchFunc = msvcrt.getch
+        getchFunc = msvcrt.getch  # Python 2 uses getch
     else:
-        getchFunc = msvcrt.getwch
+        getchFunc = msvcrt.getwch  # Python 3 uses getwch
+
+    if not blocking and not msvcrt.kbhit():
+        return None
 
     key = getchFunc()
 
@@ -237,24 +237,144 @@ def _getKey_win32_api():
         return key  # Return the key as is.
 
 
-def _getKey_posix_api():
+
+    def getkey(blocking=True):
+        buffer = ''
+        for c in getchars(blocking):
+            buffer += c
+            if buffer not in self.keys.escapes:
+                break
+
+        keycode = self.keys.canon(buffer)
+        if keycode in self.interrupts:
+            interrupt = self.interrupts[keycode]
+            if isinstance(interrupt, BaseException) or \
+                issubclass(interrupt, BaseException):
+                raise interrupt
+            else:
+                raise NotImplementedError('Unimplemented interrupt: {!r}'
+                                          .format(interrupt))
+        return keycode
+
+    @contextmanager
+    def context(self):
+        fd = self.fileno()
+        old_settings = self.termios.tcgetattr(fd)
+        self.tty.setcbreak(fd)
+        try:
+            yield
+        finally:
+            self.termios.tcsetattr(
+                fd, self.termios.TCSADRAIN, old_settings
+            )
+
+    def getchars(self, blocking=True):
+        """Get characters on Unix."""
+        with self.context():
+            if blocking:
+                yield self.__decoded_stream.read(1)
+            while self.select([self.fileno()], [], [], 0)[0]:
+                yield self.__decoded_stream.read(1)
+
+
+
+def _getKey_posix_api(blocking=True):
+    """Wait until a single key is pressed, then return the key as a string.
+
+    If blocking is False, immediately returns None if no key was hit without
+    waiting for a key press.
+
+    This function can't detect ctrl, shift, alt, win, or other special keys.
+    However, holding down shift or having capslock engaged will return a
+    shifted character."""
     # TODO - test this
     # From https://code.activestate.com/recipes/577977-get-single-keypress/
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
     try:
         tty.setraw(sys.stdin.fileno())
-        ch = sys.stdin.read(1)
+        if blocking:
+            key = sys.stdin.read(1)
+        else:
+            if select.select([sys.stdin.fileno()], [], [], 0)[0]:
+                key = sys.stdin.read(len(stuffToRead))
+            else:
+                return None  # no key was pressed
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-    return ch
+
+    return key
+
+    if key == '\r':
+        # Automatically convert \r to \n. It just makes sense to me.
+        # Nobody uses \r and they'll probably expect \n.
+        return '\n'
+    elif key == '\x1b':
+        key2 = _getKey_posix_api(blocking=False)
+
+        if key2 is None:
+            return 'esc'  # Esc key.
+
+        if key2 not in ('[', 'O'):
+            return  # TODO - should we log this as an error? It *has* to be '[' or 'O', as far as I know
+
+
+        key3 = _getKey_posix_api(blocking=False)
+        keyPressed = {
+            '[F': 'end',
+            '[H': 'home',
+            '[D': 'left',
+            '[A': 'up',
+            '[B': 'down',
+            '[C': 'right',
+            'OP': 'f1',
+            'OQ': 'f2',
+            'OR': 'f3',
+            'OS': 'f4',
+        }.get(key2 + key3)
+
+        if keyPressed is not None:
+            return keyPressed
+
+        key4 = _getKey_posix_api(blocking=False)
+        keyPressed = {
+            '[5~': 'pgup',
+            '[6~': 'pgdn',
+            '[2~': 'insert',
+            '[3~': 'del',
+        }.get(key2 + key3 + key4)
+
+        if keyPressed is not None:
+            return keyPressed
+
+        key5 = _getKey_posix_api(blocking=False)
+        keyPressed = {
+            '[15~': 'f5',
+            '[17~': 'f6',
+            '[18~': 'f7',
+            '[19~': 'f8',
+            '[20~': 'f9',
+            '[21~': 'f10',
+            '[23~': 'f11',
+            '[24~': 'f12',
+        }.get(key2 + key3 + key4 + key5)
+
+        if keyPressed is not None:
+            return keyPressed
+
+        return None # TODO - should this cause an error? We didn't recognize the key code.
+    elif ord(key) == 127:
+        return '\b'
+    else:
+        return key  # Return the key as is.
+
 
 
 
 # https://en.wikipedia.org/wiki/Windows_Glyph_List_4
 allChrs = {}
 allOrds = {}
-for start, stop in ((0x21, 0x7f), (0xa1, 0x180), (0x192, 0x193), (0x1fa, 0x200), (0x2c6, 0x2c8), (0x2c9, 0x2ca),
+for _start, _stop in ((0x21, 0x7f), (0xa1, 0x180), (0x192, 0x193), (0x1fa, 0x200), (0x2c6, 0x2c8), (0x2c9, 0x2ca),
     (0x2d8, 0x2de), (0x384, 0x38b), (0x38c, 0x38d), (0x38e, 0x3a2), (0x3a3, 0x3cf), (0x400, 0x492), (0x1e80, 0x1e86),
     (0x1ef2, 0x1ef4), (0x2013, 0x2016), (0x2017, 0x201f), (0x2020, 0x2023), (0x2026, 0x2027), (0x2030, 0x2031),
     (0x2032, 0x2034), (0x2039, 0x203b), (0x203c, 0x203d), (0x203e, 0x203f), (0x2044, 0x2045), (0x207f, 0x2080),
@@ -269,7 +389,7 @@ for start, stop in ((0x21, 0x7f), (0xa1, 0x180), (0x192, 0x193), (0x1fa, 0x200),
     (0x25bc, 0x25bd), (0x25c4, 0x25c5), (0x25ca, 0x25cc), (0x25cf, 0x25d0), (0x25d8, 0x25da), (0x25e6, 0x25e7),
     (0x263a, 0x263d), (0x2640, 0x2641), (0x2642, 0x2643), (0x2660, 0x2661), (0x2663, 0x2664), (0x2665, 0x2667),
     (0x266a, 0x266c)):
-        for i in range(start, stop):
+        for i in range(_start, _stop):
             allChrs[i] = chr(i)
             allOrds[chr(i)] = i
 
@@ -280,5 +400,6 @@ if sys.platform == 'win32':
     getKey = _getKey_win32_api
 else:
     goto = _goto_control_code
+    getKey = _getKey_posix_api
 
 init() # Automatically called on import.

@@ -35,6 +35,21 @@ Erase all the text on the screen, paint the entire terminal to the background co
 
 Move the cursor to x, y coordinates on the screen. (0, 0) is the top-left corner of the screen.
 
+* ``title(text)``
+
+Sets the title of the terminal window to `text`.
+
+* ``hide()``
+
+Hides the cursor.
+
+* ``show()``
+
+Shows the cursor after hiding it.
+
+* ``getKey()``
+
+Waits until the user presses a single key on the keyboard, then returns that key as a string.
 
 Example
 -------
