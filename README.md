@@ -47,9 +47,9 @@ Hides the cursor.
 
 Shows the cursor after hiding it.
 
-* ``getKey()``
+* ``getKey(blocking=True)``
 
-Waits until the user presses a single key on the keyboard, then returns that key as a string.
+Waits until the user presses a single key on the keyboard, then returns that key as a string. If `blocking` is `False`, the function returns immediately (returning `None` if no key has been pressed.)
 
 Example
 -------
