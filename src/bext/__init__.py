@@ -4,18 +4,36 @@
 # Copyright 2019, BSD 3-Clause license, see LICENSE file.
 # Built on top of Colorama by Jonathan Hartley
 
-# TODO - look at https://pypi.org/project/getkey/
 
-__version__ = '0.0.7'
+__version__ = '0.0.8'
 
 import colorama, sys, os, random, shutil
+from contextlib import contextmanager
 
 ALL_COLORS = ('black', 'red', 'green', 'yellow', 'blue', 'purple', 'cyan', 'white')
 
+class BextException(Exception):
+    """Raised by the code in this getkey module. If getkey ever raises
+    an exception that isn't BextException, you can assume it's caused
+    by a bug in the getkey module."""
+    pass
 
+# Figure out which modules to import:
+if sys.platform.startswith('cygwin'):
+    try:
+        import msvcrt
+    except ImportError:
+        currentPlatform = 'unix'
+    else:
+        currentPlatform = 'windows'
 if sys.platform == 'win32':
-    import msvcrt  # Used by getKey()
-    import ctypes
+    currentPlatform = 'windows'
+elif sys.platform.startswith('linux') or sys.platform.startswith('darwin'):
+    currentPlatform = 'unix'
+
+# Import the modules for this platform:
+if currentPlatform == 'windows':
+    import msvcrt, ctypes, locale
     class _CursorInfo(ctypes.Structure):
         _fields_ = [("size", ctypes.c_int), ("visible", ctypes.c_byte)]
 
@@ -25,10 +43,445 @@ if sys.platform == 'win32':
         pass
 
     COORD._fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
-elif sys.platform.startswith('linux') or sys.platform.startswith('darwin'):
-    # macOS and Linux
-    import tty, termios, select  # Used by getKey()
+elif currentPlatform == 'unix':
+    # macOS and Linux:
+    import tty, termios, select, codecs  # Used by getKey()
+else:
+    raise BextException('Unknown platform:' + sys.platform)
 
+
+
+commonCodeToNameMapping = {
+    '\x00': 'null',
+    '\x01': 'start of heading',
+    '\x02': 'start of text',
+    '\x03': 'end of text',
+    '\x04': 'end of transmission',
+    '\x05': 'enquiry',
+    '\x06': 'acknowledge',
+    '\x07': 'bell',
+    '\x08': '\b',
+    '\t': '\t',
+    '\n': '\n',
+    '\x0b': 'vertical tab',
+    '\x0c': 'new page',
+    '\r': '\n',  # Uniformly calling \r and \n a newline.
+    '\x0e': 'shift out',
+    '\x0f': 'shift in',
+    '\x10': 'data link escape',
+    '\x11': 'device control 1',
+    '\x12': 'device control 2',
+    '\x13': 'device control 3',
+    '\x14': 'device control 4',
+    '\x15': 'negative acknowledge',
+    '\x16': 'synchronous idle',
+    '\x17': 'end of transmission block',
+    '\x18': 'cancel',
+    '\x19': 'end of medium',
+    '\x1a': 'substitute',
+    '\x1b': 'esc',
+    '\x1c': 'file separator',
+    '\x1d': 'group separator',
+    '\x1e': 'record separator',
+    '\x1f': 'unit separator',
+    ' ': ' ',
+    '!': '!',
+    '"': '"',
+    '#': '#',
+    '$': '$',
+    '%': '%',
+    '&': '&',
+    "'": "'",
+    '(': '(',
+    ')': ')',
+    '*': '*',
+    '+': '+',
+    ',': ',',
+    '-': '-',
+    '.': '.',
+    '/': '/',
+    '0': '0',
+    '1': '1',
+    '2': '2',
+    '3': '3',
+    '4': '4',
+    '5': '5',
+    '6': '6',
+    '7': '7',
+    '8': '8',
+    '9': '9',
+    ':': ':',
+    ';': ';',
+    '<': '<',
+    '=': '=',
+    '>': '>',
+    '?': '?',
+    '@': '@',
+    'A': 'A',
+    'B': 'B',
+    'C': 'C',
+    'D': 'D',
+    'E': 'E',
+    'F': 'F',
+    'G': 'G',
+    'H': 'H',
+    'I': 'I',
+    'J': 'J',
+    'K': 'K',
+    'L': 'L',
+    'M': 'M',
+    'N': 'N',
+    'O': 'O',
+    'P': 'P',
+    'Q': 'Q',
+    'R': 'R',
+    'S': 'S',
+    'T': 'T',
+    'U': 'U',
+    'V': 'V',
+    'W': 'W',
+    'X': 'X',
+    'Y': 'Y',
+    'Z': 'Z',
+    '[': '[',
+    '\\': '\\',
+    ']': ']',
+    '^': '^',
+    '_': '_',
+    '`': '`',
+    'a': 'a',
+    'b': 'b',
+    'c': 'c',
+    'd': 'd',
+    'e': 'e',
+    'f': 'f',
+    'g': 'g',
+    'h': 'h',
+    'i': 'i',
+    'j': 'j',
+    'k': 'k',
+    'l': 'l',
+    'm': 'm',
+    'n': 'n',
+    'o': 'o',
+    'p': 'p',
+    'q': 'q',
+    'r': 'r',
+    's': 's',
+    't': 't',
+    'u': 'u',
+    'v': 'v',
+    'w': 'w',
+    'x': 'x',
+    'y': 'y',
+    'z': 'z',
+    '{': '{',
+    '|': '|',
+    '}': '}',
+    '~': '~',
+    # The following have codes that are already used:
+    #'\x01': 'ctrl-a',
+    #'\x02': 'ctrl-b',
+    #'\x03': 'ctrl-c',
+    #'\x04': 'ctrl-d',
+    #'\x05': 'ctrl-e',
+    #'\x06': 'ctrl-f',
+    #'\x07': 'ctrl-g',
+    #'\x08': 'ctrl-h',
+    #'\t': 'ctrl-i',
+    #'\n': 'ctrl-j',
+    #'\x0b': 'ctrl-k',
+    #'\x0c': 'ctrl-l',
+    #'\r': 'ctrl-m',
+    #'\x0e': 'ctrl-n',
+    #'\x0f': 'ctrl-o',
+    #'\x10': 'ctrl-p',
+    #'\x11': 'ctrl-q',
+    #'\x12': 'ctrl-r',
+    #'\x13': 'ctrl-s',
+    #'\x14': 'ctrl-t',
+    #'\x15': 'ctrl-u',
+    #'\x16': 'ctrl-v',
+    #'\x17': 'ctrl-w',
+    #'\x18': 'ctrl-x',
+    #'\x19': 'ctrl-y',
+    #'\x1a': 'ctrl-z',
+    #'\x00': 'ctrl-at',
+    #'\x1c': 'ctrl-backslash',
+    #'\x1e': 'ctrl-caret',
+    #'\x1b': 'ctrl-left-bracket',
+    #'\x1d': 'ctrl-right-bracket',
+    #'\x1f': 'ctrl-underscore',
+}
+
+
+windowsCodeToNameMapping = {
+    '\xe0K': 'left',
+    '\xe0M': 'right',
+    '\xe0H': 'up',
+    '\xe0P': 'down',
+    '\x00;': 'f1',
+    '\x00<': 'f2',
+    '\x00=': 'f3',
+    '\x00>': 'f4',
+    '\x00?': 'f5',
+    '\x00@': 'f6',
+    '\x00A': 'f7',
+    '\x00B': 'f8',
+    '\x00C': 'f9',
+    '\x00D': 'f10',
+    '\xe0\x85': 'f11',
+    '\xe0\x86': 'f12',
+    '\xe0R': 'insert',
+    '\xe0S': 'delete',
+    '\xe0I': 'pgup',
+    '\xe0Q': 'pgdn',
+    '\xe0G': 'home',
+    '\xe0O': 'end',
+    '\x00^': 'ctrl-f1',
+    '\x00_': 'ctrl-f2',
+    '\x00`': 'ctrl-f3',
+    '\x00a': 'ctrl-f4',
+    '\x00b': 'ctrl-f5',
+    '\x00c': 'ctrl-f6',
+    '\x00d': 'ctrl-f7',
+    '\x00e': 'ctrl-f8',
+    '\x00f': 'ctrl-f9',
+    '\x00g': 'ctrl-f10',
+    '\xe0\x89': 'ctrl-f11',
+    '\xe0\x8a': 'ctrl-f12',
+    '\x00\x03': 'ctrl-2',
+    '\xe0\x8d': 'ctrl-up',
+    '\xe0\x91': 'ctrl-down',
+    '\xe0s': 'ctrl-left',
+    '\xe0t': 'ctrl-right',
+    '\x00\x1e': 'ctrl-alt-a',
+    '\x000': 'ctrl-alt-b',
+    '\x00.': 'ctrl-alt-c',
+    '\x00 ': 'ctrl-alt-d',
+    '\x00\x12': 'ctrl-alt-e',
+    '\x00!': 'ctrl-alt-f',
+    '\x00"': 'ctrl-alt-g',
+    '\x00#': 'ctrl-alt-h',
+    '\x00\x17': 'ctrl-alt-i',
+    '\x00$': 'ctrl-alt-j',
+    '\x00%': 'ctrl-alt-k',
+    '\x00&': 'ctrl-alt-l',
+    '\x002': 'ctrl-alt-m',
+    '\x001': 'ctrl-alt-n',
+    '\x00\x18': 'ctrl-alt-o',
+    '\x00\x19': 'ctrl-alt-p',
+    '\x00\x10': 'ctrl-alt-q',
+    '\x00\x13': 'ctrl-alt-r',
+    '\x00\x1f': 'ctrl-alt-s',
+    '\x00\x14': 'ctrl-alt-t',
+    '\x00\x16': 'ctrl-alt-u',
+    '\x00/': 'ctrl-alt-v',
+    '\x00\x11': 'ctrl-alt-w',
+    '\x00-': 'ctrl-alt-x',
+    '\x00\x15': 'ctrl-alt-y',
+    '\x00,': 'ctrl-alt-z',
+    '\x00x': 'ctrl-alt-1',
+    '\x00y': 'ctrl-alt-2',
+    '\x00z': 'ctrl-alt-3',
+    '\x00{': 'ctrl-alt-4',
+    '\x00|': 'ctrl-alt-5',
+    '\x00}': 'ctrl-alt-6',
+    '\x00~': 'ctrl-alt-7',
+    '\x00\x7f': 'ctrl-alt-8',
+    '\x00\x80': 'ctrl-alt-9',
+    '\x00\x81': 'ctrl-alt-0',
+    '\x00\x82': 'ctrl-alt-minus',
+    '\x00x83': 'ctrl-alt-equals',
+    '\x00\x0e': 'ctrl-alt-backspace',
+    '\x00h': 'alt-f1',
+    '\x00i': 'alt-f2',
+    '\x00j': 'alt-f3',
+    '\x00k': 'alt-f4',
+    '\x00l': 'alt-f5',
+    '\x00m': 'alt-f6',
+    '\x00n': 'alt-f7',
+    '\x00o': 'alt-f8',
+    '\x00p': 'alt-f9',
+    '\x00q': 'alt-f10',
+    '\xe0\x8b': 'alt-f11',
+    '\xe0\x8c': 'alt-f12',
+    '\x00\x97': 'alt-home',
+    '\x00\x9f': 'alt-end',
+    '\x00\xa2': 'alt-insert',
+    '\x00\xa3': 'alt-delete',
+    '\x00\x99': 'alt-page-up',
+    '\x00\xa1': 'alt-page-down',
+    '\x00\x9b': 'alt-left',
+    '\x00\x9d': 'alt-right',
+    '\x00\x98': 'alt-up',
+    '\x00\xa0': 'alt-down',
+    '\x00\x1a': 'ctrl-alt-left-bracket',
+    '\x00\x1b': 'ctrl-alt-right-bracket',
+    '\x00\'': 'ctrl-alt-semicolon',
+    '\x00(': 'ctrl-alt-single-quote',
+    '\x00\x1c': 'ctrl-alt-enter',
+    '\x005': 'ctrl-alt-slash',
+    '\x004': 'ctrl-alt-period',
+    '\x003': 'ctrl-alt-comma',
+}
+windowsCodeToNameMapping.update(commonCodeToNameMapping)
+
+unixCodeToNameMapping = {
+    '\x1bOP': 'f1',
+    '\x1bOQ': 'f2',
+    '\x1bOR': 'f3',
+    '\x1bOS': 'f4',
+    '\x1b[A': 'up',
+    '\x1b[B': 'down',
+    '\x1b[C': 'right',
+    '\x1b[D': 'left',
+    '\x1bOP': 'f1',
+    '\x1bOQ': 'f2',
+    '\x1bOR': 'f3',
+    '\x1bOS': 'f4',
+    '\x1bOA': 'up',
+    '\x1bOB': 'down',
+    '\x1bOC': 'right',
+    '\x1bOD': 'left',
+    '\x1bOp': 'keypad-0',
+    '\x1bOq': 'keypad-1',
+    '\x1bOr': 'keypad-2',
+    '\x1bOs': 'keypad-3',
+    '\x1bOt': 'keypad-4',
+    '\x1bOu': 'keypad-5',
+    '\x1bOv': 'keypad-6',
+    '\x1bOw': 'keypad-7',
+    '\x1bOx': 'keypad-8',
+    '\x1bOy': 'keypad-9',
+    '\x1bOm': 'keypad-minus',
+    '\x1bOl': 'keypad-comma',
+    '\x1bOn': 'keypad-period',
+    '\x1bOM': 'keypad-enter',
+    '\x1b[11~': 'f1',
+    '\x1b[12~': 'f2',
+    '\x1b[13~': 'f3',
+    '\x1b[14~': 'f4',
+    '\x1b[15~': 'f5',
+    '\x1b[17~': 'f6',
+    '\x1b[18~': 'f7',
+    '\x1b[19~': 'f8',
+    '\x1b[20~': 'f9',
+    '\x1b[21~': 'f10',
+    '\x1b[23~': 'f11',
+    '\x1b[24~': 'f12',
+    '\x1b[H': 'home',
+    '\x1b[F': 'end',
+    '\x1b[5': 'page-up',
+    '\x1b[6': 'page-down',
+    '\x7f': 'backspace',
+    '\x1b[2~': 'insert',
+    '\x1b[3~': 'delete',
+}
+unixCodeToNameMapping.update(commonCodeToNameMapping)
+
+windowsPrefixes = set()
+for code, key in windowsCodeToNameMapping.items():
+    if len(code) > 1:
+        for i in range(len(code)):
+            windowsPrefixes.add(code[:i])
+
+unixPrefixes = set()
+for code, key in unixCodeToNameMapping.items():
+    if len(code) > 1:
+        for i in range(len(code)):
+            unixPrefixes.add(code[:i])
+
+
+class GetKeyUnix(object):
+    def __init__(self):
+        try:
+            self.__decoded_stream = OSReadWrapper()
+        except Exception as err:
+            raise BextException('Cannot use unix platform on non-file-like stream')
+
+    def getkey(self, blocking=True):
+        buffer = ''
+        for c in self.getcharsUnix(blocking):
+            buffer += c
+            if buffer not in unixPrefixes:
+                break
+
+        if buffer == '\x03':
+            raise KeyboardInterrupt
+        if buffer == '':
+            return None  # In non-blocking mode, return None if nothing was pressed.
+        return unixCodeToNameMapping.get(buffer, buffer)
+
+    def fileno(self):
+        return self.__decoded_stream.fileno()
+
+    @contextmanager
+    def context(self):
+        fd = self.fileno()
+        old_settings = termios.tcgetattr(fd)
+        tty.setcbreak(fd)
+        try:
+            yield
+        finally:
+            termios.tcsetattr(
+                fd, termios.TCSADRAIN, old_settings
+            )
+
+    def getchars(self, blocking=True):
+        """Get characters on Unix."""
+        with self.context():
+            if blocking:
+                yield self.__decoded_stream.read(1)
+            while select.select([self.fileno()], [], [], 0)[0]:
+                yield self.__decoded_stream.read(1)
+
+
+class OSReadWrapper(object):
+    def __init__(self):
+        self.__decoder = codecs.getincrementaldecoder(sys.stdin.encoding)()
+
+    def fileno(self):
+        return sys.stdin.fileno()
+
+    @property
+    def buffer(self):
+        return sys.stdin.buffer
+
+    def read(self, chars):
+        buffer = ''
+        while len(buffer) < chars:
+            buffer += self.__decoder.decode(os.read(sys.stdin.fileno(), 1))
+        return buffer
+
+
+class GetKeyWindows(object):
+    def getkey(self, blocking=True):
+        buffer = ''
+        for c in self.getchars(blocking):
+            buffer += c.decode(encoding=locale.getpreferredencoding())
+            if buffer not in windowsPrefixes:
+                break
+
+        if buffer == '\x03':
+            raise KeyboardInterrupt
+        if buffer == '':
+            return None  # In non-blocking mode, return None if nothing was pressed.
+        return windowsCodeToNameMapping.get(buffer, buffer)
+
+    def getchars(self, blocking=True):
+        """Get characters on Windows."""
+
+        if blocking:
+            yield msvcrt.getch()
+        while msvcrt.kbhit():
+            yield msvcrt.getch()
+
+
+if currentPlatform == 'windows':
+    getKey = GetKeyWindows().getkey
+elif currentPlatform == 'unix':
+    getKey = GetKeyUnix().getkey
 
 
 def init():
@@ -84,16 +537,16 @@ def _goto_control_code(x, y):
 
     (0, 0) is the top-left corner coordinate."""
     if x < 0:
-        raise IndexError('x coordinate is negative')
+        raise BextException('x coordinate is negative')
     if y < 0:
-        raise IndexError('y coordinate is negative')
+        raise BextException('y coordinate is negative')
 
     width, height = shutil.get_terminal_size()
 
     if x >= width:
-        raise IndexError('x coordinate is greater than terminal width ' + str(width))
+        raise BextException('x coordinate is greater than terminal width ' + str(width))
     if y >= height:
-        raise IndexError('y coordinate is greater than terminal height ' + str(height))
+        raise BextException('y coordinate is greater than terminal height ' + str(height))
 
     sys.stdout.write('\x1b[%d;%dH' % (y + 1, x + 1))
 
@@ -103,16 +556,16 @@ def _goto_win32_api(x, y):
 
     (0, 0) is the top-left corner coordinate."""
     if x < 0:
-        raise IndexError('x coordinate is negative')
+        raise BextException('x coordinate is negative')
     if y < 0:
-        raise IndexError('y coordinate is negative')
+        raise BextException('y coordinate is negative')
 
     width, height = shutil.get_terminal_size()
 
     if x >= width:
-        raise IndexError('x coordinate is greater than terminal width ' + str(width))
+        raise BextException('x coordinate is greater than terminal width ' + str(width))
     if y >= height:
-        raise IndexError('y coordinate is greater than terminal height ' + str(height))
+        raise BextException('y coordinate is greater than terminal height ' + str(height))
 
     h = ctypes.windll.kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
     ctypes.windll.kernel32.SetConsoleCursorPosition(h, COORD(x, y))
@@ -178,199 +631,6 @@ def show():
         sys.out.flush()
 
 
-def _getKey_win32_api(blocking=True):
-    """Wait until a single key is pressed, then return the key as a string.
-
-    If blocking is False, immediately returns None if no key was hit without
-    waiting for a key press.
-
-    This function can't detect ctrl, shift, alt, win, or other special keys.
-    However, holding down shift or having capslock engaged will return a
-    shifted character."""
-    if sys.version_info[0] == 2:
-        getchFunc = msvcrt.getch  # Python 2 uses getch
-    else:
-        getchFunc = msvcrt.getwch  # Python 3 uses getwch
-
-    if not blocking and not msvcrt.kbhit():
-        return None
-
-    key = getchFunc()
-
-    if key == '\r':
-        # Automatically convert \r to \n. It just makes sense to me.
-        # Nobody uses \r and they'll probably expect \n.
-        return '\n'
-    elif key == '\x1b':
-        return 'esc'  # Esc key.
-    elif key == chr(224):
-        key2 = getchFunc()
-        return {
-            chr(224) + 'I': 'pgup',
-            chr(224) + 'Q': 'pgdn',
-            chr(224) + 'O': 'end',
-            chr(224) + 'G': 'home',
-            chr(224) + 'R': 'insert',
-            chr(224) + 'S': 'del',
-            chr(224) + 'K': 'left',
-            chr(224) + 'H': 'up',
-            chr(224) + 'P': 'down',
-            chr(224) + 'M': 'right',
-            chr(224) + '\x85': 'f11',
-            chr(224) + '\x86': 'f12',
-            }.get(key + key2, key + key2)
-    elif key == '\x00':
-        key2 = getchFunc()
-        return {
-            '\x00' + ';': 'f1',
-            '\x00' + '<': 'f2',
-            '\x00' + '=': 'f3',
-            '\x00' + '>': 'f4',
-            '\x00' + '?': 'f5',
-            '\x00' + '@': 'f6',
-            '\x00' + 'A': 'f7',
-            '\x00' + 'B': 'f8',
-            '\x00' + 'C': 'f9',
-            '\x00' + 'D': 'f10',
-            }.get(key + key2, key + key2)
-    else:
-        return key  # Return the key as is.
-
-
-
-    def getkey(blocking=True):
-        buffer = ''
-        for c in getchars(blocking):
-            buffer += c
-            if buffer not in self.keys.escapes:
-                break
-
-        keycode = self.keys.canon(buffer)
-        if keycode in self.interrupts:
-            interrupt = self.interrupts[keycode]
-            if isinstance(interrupt, BaseException) or \
-                issubclass(interrupt, BaseException):
-                raise interrupt
-            else:
-                raise NotImplementedError('Unimplemented interrupt: {!r}'
-                                          .format(interrupt))
-        return keycode
-
-    @contextmanager
-    def context(self):
-        fd = self.fileno()
-        old_settings = self.termios.tcgetattr(fd)
-        self.tty.setcbreak(fd)
-        try:
-            yield
-        finally:
-            self.termios.tcsetattr(
-                fd, self.termios.TCSADRAIN, old_settings
-            )
-
-    def getchars(self, blocking=True):
-        """Get characters on Unix."""
-        with self.context():
-            if blocking:
-                yield self.__decoded_stream.read(1)
-            while self.select([self.fileno()], [], [], 0)[0]:
-                yield self.__decoded_stream.read(1)
-
-
-
-def _getKey_posix_api(blocking=True):
-    """Wait until a single key is pressed, then return the key as a string.
-
-    If blocking is False, immediately returns None if no key was hit without
-    waiting for a key press.
-
-    This function can't detect ctrl, shift, alt, win, or other special keys.
-    However, holding down shift or having capslock engaged will return a
-    shifted character."""
-    # TODO - test this
-    # From https://code.activestate.com/recipes/577977-get-single-keypress/
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    try:
-        tty.setraw(sys.stdin.fileno())
-        if blocking:
-            key = sys.stdin.read(1)
-        else:
-            if select.select([sys.stdin.fileno()], [], [], 0)[0]:
-                key = sys.stdin.read(len(stuffToRead))
-            else:
-                return None  # no key was pressed
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-
-    return key
-
-    if key == '\r':
-        # Automatically convert \r to \n. It just makes sense to me.
-        # Nobody uses \r and they'll probably expect \n.
-        return '\n'
-    elif key == '\x1b':
-        key2 = _getKey_posix_api(blocking=False)
-
-        if key2 is None:
-            return 'esc'  # Esc key.
-
-        if key2 not in ('[', 'O'):
-            return  # TODO - should we log this as an error? It *has* to be '[' or 'O', as far as I know
-
-
-        key3 = _getKey_posix_api(blocking=False)
-        keyPressed = {
-            '[F': 'end',
-            '[H': 'home',
-            '[D': 'left',
-            '[A': 'up',
-            '[B': 'down',
-            '[C': 'right',
-            'OP': 'f1',
-            'OQ': 'f2',
-            'OR': 'f3',
-            'OS': 'f4',
-        }.get(key2 + key3)
-
-        if keyPressed is not None:
-            return keyPressed
-
-        key4 = _getKey_posix_api(blocking=False)
-        keyPressed = {
-            '[5~': 'pgup',
-            '[6~': 'pgdn',
-            '[2~': 'insert',
-            '[3~': 'del',
-        }.get(key2 + key3 + key4)
-
-        if keyPressed is not None:
-            return keyPressed
-
-        key5 = _getKey_posix_api(blocking=False)
-        keyPressed = {
-            '[15~': 'f5',
-            '[17~': 'f6',
-            '[18~': 'f7',
-            '[19~': 'f8',
-            '[20~': 'f9',
-            '[21~': 'f10',
-            '[23~': 'f11',
-            '[24~': 'f12',
-        }.get(key2 + key3 + key4 + key5)
-
-        if keyPressed is not None:
-            return keyPressed
-
-        return None # TODO - should this cause an error? We didn't recognize the key code.
-    elif ord(key) == 127:
-        return '\b'
-    else:
-        return key  # Return the key as is.
-
-
-
-
 # https://en.wikipedia.org/wiki/Windows_Glyph_List_4
 allChrs = {}
 allOrds = {}
@@ -393,13 +653,5 @@ for _start, _stop in ((0x21, 0x7f), (0xa1, 0x180), (0x192, 0x193), (0x1fa, 0x200
             allChrs[i] = chr(i)
             allOrds[chr(i)] = i
 
-
-if sys.platform == 'win32':
-    # On Windows, use the win32 api to set the cursor position since it's faster.
-    goto = _goto_win32_api
-    getKey = _getKey_win32_api
-else:
-    goto = _goto_control_code
-    getKey = _getKey_posix_api
 
 init() # Automatically called on import.
