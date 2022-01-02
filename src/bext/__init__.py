@@ -5,7 +5,7 @@
 # Built on top of Colorama by Jonathan Hartley
 
 
-__version__ = '0.0.8'
+__version__ = '0.0.7'
 
 import colorama, sys, os, random, shutil
 from contextlib import contextmanager
