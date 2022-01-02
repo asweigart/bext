@@ -18,38 +18,6 @@ class BextException(Exception):
     by a bug in the getkey module."""
     pass
 
-# Figure out which modules to import:
-if sys.platform.startswith('cygwin'):
-    try:
-        import msvcrt
-    except ImportError:
-        currentPlatform = 'unix'
-    else:
-        currentPlatform = 'windows'
-if sys.platform == 'win32':
-    currentPlatform = 'windows'
-elif sys.platform.startswith('linux') or sys.platform.startswith('darwin'):
-    currentPlatform = 'unix'
-
-# Import the modules for this platform:
-if currentPlatform == 'windows':
-    import msvcrt, ctypes, locale
-    class _CursorInfo(ctypes.Structure):
-        _fields_ = [("size", ctypes.c_int), ("visible", ctypes.c_byte)]
-
-    STD_OUTPUT_HANDLE = -11
-
-    class COORD(ctypes.Structure):
-        pass
-
-    COORD._fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
-elif currentPlatform == 'unix':
-    # macOS and Linux:
-    import tty, termios, select, codecs  # Used by getKey()
-else:
-    raise BextException('Unknown platform:' + sys.platform)
-
-
 
 commonCodeToNameMapping = {
     '\x00': 'null',
@@ -478,12 +446,6 @@ class GetKeyWindows(object):
             yield msvcrt.getch()
 
 
-if currentPlatform == 'windows':
-    getKey = GetKeyWindows().getkey
-elif currentPlatform == 'unix':
-    getKey = GetKeyUnix().getkey
-
-
 def init():
     """This sets up stdout to work in color. This function is automatically
     called when Bext is imported."""
@@ -654,4 +616,39 @@ for _start, _stop in ((0x21, 0x7f), (0xa1, 0x180), (0x192, 0x193), (0x1fa, 0x200
             allOrds[chr(i)] = i
 
 
-init() # Automatically called on import.
+# Figure out which modules to import:
+if sys.platform.startswith('cygwin'):
+    try:
+        import msvcrt
+    except ImportError:
+        currentPlatform = 'unix'
+    else:
+        currentPlatform = 'windows'
+if sys.platform == 'win32':
+    currentPlatform = 'windows'
+elif sys.platform.startswith('linux') or sys.platform.startswith('darwin'):
+    currentPlatform = 'unix'
+
+# Import the modules for this platform:
+if currentPlatform == 'windows':
+    import msvcrt, ctypes, locale
+    class _CursorInfo(ctypes.Structure):
+        _fields_ = [("size", ctypes.c_int), ("visible", ctypes.c_byte)]
+
+    STD_OUTPUT_HANDLE = -11
+
+    class COORD(ctypes.Structure):
+        pass
+
+    COORD._fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
+
+    goto = _goto_win32_api
+    getKey = GetKeyWindows().getkey
+elif currentPlatform == 'unix':
+    # macOS and Linux:
+    import tty, termios, select, codecs  # Used by getKey()
+    getKey = GetKeyUnix().getkey
+else:
+    raise BextException('Unknown platform:' + sys.platform)
+
+init() # Automatically called on import. Initializes Colorama.
