@@ -5,7 +5,7 @@
 # Built on top of Colorama by Jonathan Hartley
 
 
-__version__ = '0.0.7'
+__version__ = '0.0.8'
 
 import colorama, sys, os, random, shutil
 from contextlib import contextmanager
@@ -378,7 +378,7 @@ class GetKeyUnix(object):
         if buffer == '\x03':
             raise KeyboardInterrupt
         if buffer == '':
-            return None  # In non-blocking mode, return None if nothing was pressed.
+            return ''  # In non-blocking mode, return '' if nothing was pressed.
         return unixCodeToNameMapping.get(buffer, buffer)
 
     def fileno(self):
@@ -434,7 +434,7 @@ class GetKeyWindows(object):
         if buffer == '\x03':
             raise KeyboardInterrupt
         if buffer == '':
-            return None  # In non-blocking mode, return None if nothing was pressed.
+            return ''  # In non-blocking mode, return '' if nothing was pressed.
         return windowsCodeToNameMapping.get(buffer, buffer)
 
     def getchars(self, blocking=True):
@@ -552,6 +552,16 @@ def size():
     return shutil.get_terminal_size()
 
 
+def width():
+    """Returns the width of the terminal in columns as an int."""
+    return shutil.get_terminal_size()[0]
+
+
+def height():
+    """Returns the height of the terminal in rows as an int."""
+    return shutil.get_terminal_size()[1]
+
+
 def clear(mode=2):  # TODO - what does mode mean?
     """Clears the terminal and positions the cursor at the top-left corner."""
     sys.stdout.write(colorama.ansi.CSI + str(mode) + 'J')
@@ -647,6 +657,7 @@ if currentPlatform == 'windows':
 elif currentPlatform == 'unix':
     # macOS and Linux:
     import tty, termios, select, codecs  # Used by getKey()
+    goto = _goto_control_code
     getKey = GetKeyUnix().getkey
 else:
     raise BextException('Unknown platform:' + sys.platform)
