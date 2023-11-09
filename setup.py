@@ -22,7 +22,7 @@ setup(
     packages=find_packages(where='src'),
     package_dir={'': 'src'},
     test_suite='tests',
-    install_requires=['colorama'],
+    install_requires=['colorama<=0.4.5'], # 0.4.6 causes problems on Windows.
     keywords='',
     classifiers=[
         'Programming Language :: Python',

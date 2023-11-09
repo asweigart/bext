@@ -5,6 +5,10 @@ A cross-platform Python 2/3 module for colorful, boring, text-based terminal pro
 
 Basically, use Bext if you want to move the cursor around the terminal window and have colorful text, like some kind of limited curses module (but it works on Windows also.)
 
+Bext does not currently work in the new Windows Terminal. It does work in the older Command Prompt.
+
+Note: Currently something in Colorama 0.4.6 causes Bext to fail. Please use 0.4.5 or earlier.
+
 Installation
 ------------
 
@@ -27,9 +31,17 @@ Sets the background color, that is, the color of the cell behind the text charac
 
 Returns a tuple of the (width, height) of the current terminal.
 
+* ``resize(columns, rows)``
+
+Resizes the terminal window to the given number of columns and rows. Returns `True` if the resize was a success and `False` if not. Note that on Ubuntu Linux, this function doesn't work if the Terminal window is maximized. On Windows, if the Command Prompt is maximized the window won't change size but the screen buffer size will be resized. This function is not very reliable.
+
 * ``clear()``
 
-Erase all the text on the screen, paint the entire terminal to the background color, and
+Erase all the text on the screen, paint the entire terminal to the background color, and moves the cursor to (0, 0) at the top-left corner of the screen.
+
+* ``clear_line()``
+
+Erases the line where the cursor is located.
 
 * ``goto(x, y)``
 
@@ -39,15 +51,15 @@ Move the cursor to x, y coordinates on the screen. (0, 0) is the top-left corner
 
 Sets the title of the terminal window to `text`.
 
-* ``hide()``
+* ``hide_cursor()``
 
 Hides the cursor.
 
-* ``show()``
+* ``show_cursor()``
 
 Shows the cursor after hiding it.
 
-* ``getKey(blocking=True)``
+* ``get_key(blocking=True)``
 
 Waits until the user presses a single key on the keyboard, then returns that key as a string. If `blocking` is `False`, the function returns immediately (returning `None` if no key has been pressed.)
 

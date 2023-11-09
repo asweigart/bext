@@ -4,8 +4,9 @@
 # Copyright 2019, BSD 3-Clause license, see LICENSE file.
 # Built on top of Colorama by Jonathan Hartley
 
+# TODO - read https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
 
-__version__ = '0.0.8'
+__version__ = '0.1.0'
 
 import colorama, sys, os, random, shutil
 from contextlib import contextmanager
@@ -13,9 +14,9 @@ from contextlib import contextmanager
 ALL_COLORS = ('black', 'red', 'green', 'yellow', 'blue', 'purple', 'cyan', 'white')
 
 class BextException(Exception):
-    """Raised by the code in this getkey module. If getkey ever raises
+    """Raised by the code in this get_key module. If get_key ever raises
     an exception that isn't BextException, you can assume it's caused
-    by a bug in the getkey module."""
+    by a bug in the get_key module."""
     pass
 
 
@@ -368,7 +369,7 @@ class GetKeyUnix(object):
         except Exception as err:
             raise BextException('Cannot use unix platform on non-file-like stream')
 
-    def getkey(self, blocking=True):
+    def get_key(self, blocking=True):
         buffer = ''
         for c in self.getcharsUnix(blocking):
             buffer += c
@@ -424,7 +425,7 @@ class OSReadWrapper(object):
 
 
 class GetKeyWindows(object):
-    def getkey(self, blocking=True):
+    def get_key(self, blocking=True):
         buffer = ''
         for c in self.getchars(blocking):
             buffer += c.decode(encoding=locale.getpreferredencoding())
@@ -451,6 +452,9 @@ def init():
     called when Bext is imported."""
     colorama.init()
 
+def deinit():
+    """This calls Colorama's deinit() function, in case you need to undo init()."""
+    colorama.deinit()
 
 def fg(color):
     """Sets the foreground color. The `color` parameter can be one of the
@@ -535,16 +539,16 @@ def _goto_win32_api(x, y):
 
 def resize(columns, rows):
     """Resize the terminal window. Returns True if the resize was successful,
-    otherwise returns False."""
+    otherwise returns False. This function is not reliable."""
     if sys.platform == 'win32':
         # This is only on Windows 7 and later.
         os.system('mode %s,%s' % (columns, rows))
         return size() == (columns, rows)
         # TODO - figure out a way to detect windows 7. (There seems to be some problems with platform.platform())
     else:
-        raise NotImplementedError
+        sys.stdout.write("\x1b[8;{rows};{cols}t".format(rows=32, cols=columns))
         #os.system('resize -s %s %s' % (rows, columns))
-        #return size() == (columns, rows)
+        return size() == (columns, rows)
 
 
 def size():
@@ -570,12 +574,18 @@ def clear(mode=2):  # TODO - what does mode mean?
     goto(0, 0)
 
 
+def clear_line(mode=2):  # TODO - what does mode mean? This was copied from clear()
+    """Clears the current line and positions the cursor at the start of the current line."""
+    sys.stdout.write(colorama.ansi.CSI + str(mode) + 'K')
+    #sys.stdout.write(colorama.ansi.CSI + str(mode) + '1;1H')
+    sys.stdout.write('\b' * 300) # TODO - fix this with the real control code
+
 def title(text):
     """Sets the title of the terminal window to `text`."""
     sys.stdout.write(colorama.ansi.OSC + '2;' + text + colorama.ansi.BEL)
 
 
-def hide():
+def hide_cursor():
     """"Hides the cursor."""
     if sys.platform == 'win32':
         # This only works in the Command Prompt and PowerShell, not in other terminal-like environments.
@@ -585,11 +595,12 @@ def hide():
         ci.visible = False
         ctypes.windll.kernel32.SetConsoleCursorInfo(handle, ctypes.byref(ci))
     else:
-        sys.out.write('\033[?25l')
-        sys.out.flush()
+        # macOS and Linux:
+        sys.stdout.write('\033[?25l')
+        sys.stdout.flush()
 
 
-def show():
+def show_cursor():
     """Shows the cursor after hiding it."""
     if sys.platform == 'win32':
         # This only works in the Command Prompt and PowerShell, not in other terminal-like environments.
@@ -599,8 +610,9 @@ def show():
         ci.visible = True
         ctypes.windll.kernel32.SetConsoleCursorInfo(handle, ctypes.byref(ci))
     else:
-        sys.out.write('\033[?25h')
-        sys.out.flush()
+        # macOS and Linux:
+        sys.stdout.write('\033[?25h')
+        sys.stdout.flush()
 
 
 # https://en.wikipedia.org/wiki/Windows_Glyph_List_4
@@ -653,13 +665,125 @@ if currentPlatform == 'windows':
     COORD._fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
 
     goto = _goto_win32_api
-    getKey = GetKeyWindows().getkey
+    get_key = GetKeyWindows().get_key
 elif currentPlatform == 'unix':
     # macOS and Linux:
-    import tty, termios, select, codecs  # Used by getKey()
+    import tty, termios, select, codecs  # Used by get_key()
     goto = _goto_control_code
-    getKey = GetKeyUnix().getkey
+    get_key = GetKeyUnix().get_key
 else:
     raise BextException('Unknown platform:' + sys.platform)
+
+
+
+def read_screen(x=None, y=None):
+    if x is None or y is None:
+        pass
+    pass
+
+def read_screen_x(x):
+    pass
+
+def read_screen_y(y):
+    pass
+
+
+class Screen():
+    def __init__(self, width=None, height=None):
+        if width is None or height is None:
+            width, height = shutil.get_terminal_size()
+
+        self._chars = []
+        self._fg = []
+        self._bg = []
+        self._charsAtLastUpdate = []
+        self._fgAtLastUpdate = []
+        self._bgAtLastUpdate = []
+        self._cursorx = 0
+        self._cursory = 0
+        self._fg = 'white'
+        self._bg = 'black'
+
+        for y in range(width):
+            self._chars.append([' '] * height)
+            self._fg.append([' '] * height)
+            self._bg.append([' '] * height)
+            self._charsAtLastUpdate.append([' '] * height)
+            self._fgAtLastUpdate.append([' '] * height)
+            self._bgAtLastUpdate.append([' '] * height)
+
+
+    def goto(self, x=None, y=None):
+        if x is not None:
+            self._cursorx = x
+        if y is not None:
+            self._cursory = y
+
+
+    def fg(self, color):
+        self._fg = color
+
+    def bg(self, color):
+        self._bg = color
+
+    def print(self, *args, sep=' ', end='\n', fg=None, bg=None):
+        text = sep.join(args) + end
+        if fg is None:
+            fg = self._fg
+        if bg is None:
+            bg = self._bg
+
+        for char in text:
+            # TODO handle \b and \t and \r
+            if char == '\n' or self._cursorx >= self.width:
+                self._cursorx = 0
+                self._cursory += 1
+                if _cursory >= self.height:
+                    return # don't print anything past the end of the screen; bext doesn't scroll up.
+
+
+            self._chars[self._cursorx][self._cursory] = char
+
+    def write(self, *args):
+        self.print(*args, sep='', end='')
+
+    def clear(self):
+        pass
+
+    def update(self):
+        pass
+
+    def pixel(self, x, y, color):
+        pass
+
+    def __getitem__(self, xy):
+        x, y = xy
+        return self._chars[x][y]
+
+    def __setitem__(self, xy, char):
+        x, y = xy
+        self._chars[x][y] = char
+
+    @property
+    def fg(self):
+        return self._fg
+
+    @fg.setter
+    def fg(self, color):
+        self._fg = color
+
+    @property
+    def bg(self):
+        return self._bg
+
+    @bg.setter
+    def bg(self, color):
+        self._bg = color
+
+
+
+
+
+
 
 init() # Automatically called on import. Initializes Colorama.
