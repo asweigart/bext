@@ -6,7 +6,11 @@
 
 # TODO - read https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
 
+<<<<<<< HEAD
 __version__ = '0.1.0'
+=======
+__version__ = '0.0.8'
+>>>>>>> 8d3925b82d25d587c0b19ec12e17905dc6326d2d
 
 import colorama, sys, os, random, shutil
 from contextlib import contextmanager
@@ -397,7 +401,7 @@ class GetKeyUnix(object):
                 fd, termios.TCSADRAIN, old_settings
             )
 
-    def getchars(self, blocking=True):
+    def getcharsUnix(self, blocking=True):
         """Get characters on Unix."""
         with self.context():
             if blocking:
@@ -427,7 +431,7 @@ class OSReadWrapper(object):
 class GetKeyWindows(object):
     def get_key(self, blocking=True):
         buffer = ''
-        for c in self.getchars(blocking):
+        for c in self.getcharsWindows(blocking):
             buffer += c.decode(encoding=locale.getpreferredencoding())
             if buffer not in windowsPrefixes:
                 break
@@ -438,7 +442,7 @@ class GetKeyWindows(object):
             return ''  # In non-blocking mode, return '' if nothing was pressed.
         return windowsCodeToNameMapping.get(buffer, buffer)
 
-    def getchars(self, blocking=True):
+    def getcharsWindows(self, blocking=True):
         """Get characters on Windows."""
 
         if blocking:
