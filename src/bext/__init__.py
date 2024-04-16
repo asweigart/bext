@@ -5,7 +5,7 @@
 # Built on top of Colorama by Jonathan Hartley
 
 
-__version__ = '0.0.7'
+__version__ = '0.0.8'
 
 import colorama, sys, os, random, shutil
 from contextlib import contextmanager
@@ -396,7 +396,7 @@ class GetKeyUnix(object):
                 fd, termios.TCSADRAIN, old_settings
             )
 
-    def getchars(self, blocking=True):
+    def getcharsUnix(self, blocking=True):
         """Get characters on Unix."""
         with self.context():
             if blocking:
@@ -426,7 +426,7 @@ class OSReadWrapper(object):
 class GetKeyWindows(object):
     def getkey(self, blocking=True):
         buffer = ''
-        for c in self.getchars(blocking):
+        for c in self.getcharsWindows(blocking):
             buffer += c.decode(encoding=locale.getpreferredencoding())
             if buffer not in windowsPrefixes:
                 break
@@ -437,7 +437,7 @@ class GetKeyWindows(object):
             return None  # In non-blocking mode, return None if nothing was pressed.
         return windowsCodeToNameMapping.get(buffer, buffer)
 
-    def getchars(self, blocking=True):
+    def getcharsWindows(self, blocking=True):
         """Get characters on Windows."""
 
         if blocking:
