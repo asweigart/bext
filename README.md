@@ -61,7 +61,7 @@ Shows the cursor after hiding it.
 
 * ``get_key(blocking=True)``
 
-Waits until the user presses a single key on the keyboard, then returns that key as a string. If `blocking` is `False`, the function returns immediately (returning `None` if no key has been pressed.)
+Waits until the user presses a single key on the keyboard, then returns that key as a string. If `blocking` is `False`, the function returns immediately (returning `None` if no key has been pressed.) NOTE: `blocking=False` is currently broken and doesn't work reliably.
 
 Example
 -------
