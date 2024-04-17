@@ -6,11 +6,7 @@
 
 # TODO - read https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
 
-<<<<<<< HEAD
-__version__ = '0.1.0'
-=======
-__version__ = '0.0.8'
->>>>>>> 8d3925b82d25d587c0b19ec12e17905dc6326d2d
+__version__ = '0.1.1'
 
 import colorama, sys, os, random, shutil
 from contextlib import contextmanager
